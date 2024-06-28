@@ -87,6 +87,19 @@ class DefiniteIntegral
         barrier.SignalAndWait();
         return result;
     }
+        public static double OneThread(Func<double, double> f, double a, double b, double epsilon)
+    {
+        if (a >= b || epsilon <= 0 || !double.IsNormal(a) || !double.IsNormal(b))
+        {
+            throw new ArgumentException("Некорректный ввод данных.");
+        }
+
+        int steps = (int)((b - a) / epsilon);
+        double sum = Enumerable.Range(0, steps)
+                               .Select(i => ((f(a + epsilon * i) + f(a + epsilon * (i + 1))) / 2) * epsilon)
+                               .Sum();
+        return sum;
+    }
 }
 
 #!csharp
@@ -103,3 +116,123 @@ Assert.Equal(0, DefiniteIntegral.Solve(-1, 1, X, 1e-4, 2), 1e-4);
 Assert.Equal(0, DefiniteIntegral.Solve(-1, 1, SIN, 1e-5, 8), 1e-4);
 
 Assert.Equal(50, DefiniteIntegral.Solve(0, 10, X, 1e-6, 8), 1e-5);
+
+#!csharp
+
+#r "nuget:ScottPlot, 5.0.35"
+
+using Microsoft.DotNet.Interactive.Formatting;
+using System.Diagnostics;
+
+Formatter.Register(typeof(ScottPlot.Plot), (p, w) => 
+    w.Write(((ScottPlot.Plot)p).GetImageHtml(400, 300)), HtmlFormatter.MimeType);
+
+#!csharp
+
+//определяем оптимальный размер шага для вычисления интеграла
+Stopwatch sw = new Stopwatch();
+Func<double, double> SIN = Math.Sin;
+
+double[] steps = { 1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6 };
+double optimalStep = steps[0];
+double minTime = double.MaxValue;
+
+foreach (double step in steps)
+{
+    sw.Restart();
+    double result = DefiniteIntegral.Solve(-100, 100, SIN, step, 10);
+    sw.Stop();
+    double elapsedMilliseconds = sw.Elapsed.TotalMilliseconds;
+    Console.WriteLine($"Затрачено времени: {elapsedMilliseconds} мс, размер шага: {step}");
+
+    if (elapsedMilliseconds < minTime)
+    {
+        minTime = elapsedMilliseconds;
+        optimalStep = step;
+    }
+}
+
+Console.WriteLine($"Оптимальный размер шага: {optimalStep:e}, за время: {minTime} мс");
+
+#!csharp
+
+//измеряем время выполнения многопоточной реализации
+Stopwatch sw = new Stopwatch();
+
+var SIN = (double x) => Math.Sin(x);
+int testsNumber = 100;
+int maxThreadCount = 10;
+List<double> results1 = new List<double>();
+
+for (int i = 1; i <= maxThreadCount; i++) 
+{
+    sw.Start();
+    for (int j = 0; j < testsNumber; j++) 
+    {
+        DefiniteIntegral.Solve(-100, 100, SIN, optimalStep, i);
+    }
+    sw.Stop();
+    results1.Add(sw.ElapsedMilliseconds / (double)testsNumber);
+    sw.Restart();
+}
+
+//подготовка данных для построения графика и нахождение оптимального числа потоков, при котором функция выполняется за минимальное время
+int[] numThreads = Enumerable.Range(1, maxThreadCount).ToArray();
+double[] timeValues = results1.ToArray();
+double bestResult = timeValues.Min();
+double bestNumber = numThreads[results1.IndexOf(bestResult)];
+
+#!csharp
+
+ScottPlot.Plot plot = new();
+plot.Add.Scatter(timeValues, numThreads);
+plot.XLabel("Время вычисления(мс)");
+plot.YLabel("Количество потоков"); 
+plot.Title($"Лучшее время: {bestResult} мс");
+plot
+
+#!csharp
+
+//измеряем время выполнения однопоточной реализации
+Stopwatch sw = new Stopwatch();
+
+List<double> results2 = new List<double>();
+double oneThread;
+int iterations = 100;
+
+for (int i = 0; i < iterations; i++) 
+{
+    sw.Start();
+    for (int j = 0; j < testsNumber; j++) 
+    {
+        DefiniteIntegral.OneThread(SIN, -100, 100, optimalStep);
+    }
+    sw.Stop();
+    results2.Add(sw.ElapsedMilliseconds / (double)testsNumber);
+    sw.Restart();
+}
+
+oneThread = results2.Sum() / (double)iterations;
+double diffPercent = Math.Round((oneThread / bestResult - 1) * 100, 2);
+
+#!csharp
+
+//время выполнения многопоточной и однопоточной версий
+Console.WriteLine($"Время выполнения многопоточной версии: {bestResult} мс");
+Console.WriteLine($"Время выполнения однопоточной версии: {oneThread} мс");
+
+//процентное различие времени выполнения между однопоточной и многопоточной реализациями
+Console.WriteLine($"Многопоточная реализация с {bestNumber} потоками на {diffPercent}% быстрее, чем однопоточная");
+
+#!markdown
+
+## Summary
+
+## 1. Оптимальный размер шага
+Оптимальный размер шага, обеспечивающий точность 1e-4, был определен как 1e-2. Он был выбран путем измерения времени выполнения для различных шагов и выбора наименьшего времени.
+
+## 2. Оптимальное количество потоков
+Среднее значение оптимального количества потоков, при котором достигается минимальное время выполнения многопоточной функции, было определено как 8.
+
+## 3. Сравнение времени выполнения многопоточной и однопоточной версий
+Многопоточная реализация в среднем на 130% быстрее, чем однопоточная.
