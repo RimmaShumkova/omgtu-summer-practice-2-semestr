@@ -34,7 +34,7 @@ using Xunit;
 
 class Message
 {
-    static int messageHandled = 0;
+    public static int messageHandled = 0;
     int id;
     public Message()
     {
@@ -60,7 +60,33 @@ using System.Collections.Concurrent;
 var queue1 = new BlockingCollection<Message>(2); //очередь первого потока
 var queue2 = new BlockingCollection<Message>(2); //очередь второго потока
 
-// Здесь писать решение
+object lockObj = new object();
+Task task1 = Task.Run(() => ProcessMessages(queue1, queue2));
+Task task2 = Task.Run(() => ProcessMessages(queue2, queue1));
+queue1.Add(new Message()); //добавляем первое сообщение в очередь 1
+Task.WaitAll(task1, task2); //ожидаем завершения выполнения обеих задач
+
+void ProcessMessages(BlockingCollection<Message> firstQueue, BlockingCollection<Message> secondQueue)
+{
+    foreach (var mess in firstQueue.GetConsumingEnumerable())
+    {
+        mess.Handle();
+
+        lock (lockObj)
+        {
+            if (++Message.messageHandled >= 200)
+            {
+                firstQueue.CompleteAdding();
+                secondQueue.CompleteAdding();
+                break;
+            }
+        }
+
+        secondQueue.Add(new Message());
+    }
+      
+    secondQueue.CompleteAdding(); //завершаем добавление элементов во вторую очередь после обработки всех сообщений
+}
 
 #!csharp
 
