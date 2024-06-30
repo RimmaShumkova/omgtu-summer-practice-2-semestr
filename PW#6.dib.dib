@@ -49,6 +49,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
+using ScottPlot;
 
 double BlockingCollectionTest()
 {
@@ -211,6 +212,7 @@ Formatter.Register(typeof(ScottPlot.Plot), (p, w) =>
 //график для BlockingCollection
 ScottPlot.Plot plt = new();
 plt.Add.Scatter(Enumerable.Range(1, 10).ToArray(), blockCollTime.ToArray());
+plt.Save("BlockingCollection.png", 400, 300);
 plt
 
 #!csharp
@@ -218,6 +220,7 @@ plt
 //график для ConcurrentQueue
 ScottPlot.Plot plt = new();
 plt.Add.Scatter(Enumerable.Range(1, 10).ToArray(), concQueueTime.ToArray());
+plt.Save("ConcurrentQueue.png", 400, 300);
 plt
 
 #!csharp
@@ -225,6 +228,7 @@ plt
 //график для Queue
 ScottPlot.Plot plt = new();
 plt.Add.Scatter(Enumerable.Range(1, 10).ToArray(), queueTime.ToArray());
+plt.Save("Queue.png", 400, 300);
 plt
 
 #!markdown
