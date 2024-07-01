@@ -38,3 +38,185 @@ ServerThread может менять свое поведение для обра
 Отсутствие Команд в очереди потока не должно требовать значительных затрат процессорного времени. Значительными считаются затраты, которые зависят от времени простоя потока.
 
 Написать проверку, которая гарантирует правильное выполнение команд HardStop и SoftStop.
+
+#!csharp
+
+using System;
+using System.Collections.Concurrent;
+using System.Threading;
+
+public class ServerThread
+{
+    BlockingCollection<ICommand> commandQueue = new BlockingCollection<ICommand>();
+    Thread runThread;
+    bool isRunning;
+
+    public ServerThread()
+    {
+        isRunning = true;
+        runThread = new Thread(Run);
+        runThread.Start();
+    }
+
+    //метод для добавления команды в очередь
+    public void AddCommand(ICommand command)
+    {
+        if (isRunning)
+        {
+            commandQueue.Add(command);
+        }
+    }
+
+    //основной метод, выполняющий команды из очереди
+    private void Run()
+    {
+        while (isRunning || commandQueue.Count > 0)
+        {
+            ICommand command;
+            try
+            {
+                command = commandQueue.Take(); //извлекаем команду из очереди
+            }
+            catch (InvalidOperationException)
+            {
+                break;
+            }
+
+            try
+            {
+                command.Execute();
+            }
+            catch (Exception excep)
+            {
+                Console.WriteLine($"Исключение: {excep.Message}");
+            }
+        }
+
+        while (commandQueue.TryTake(out var remainingCommand))
+        {
+            try
+            {
+                remainingCommand.Execute();
+            }
+            catch (Exception excep)
+            {
+                Console.WriteLine($"Исключение: {excep.Message}");
+            }
+        }
+    }
+
+    public void HardStop()
+    {
+        isRunning = false;
+        commandQueue.CompleteAdding(); //завершение добавления новых команд в очередь
+        runThread.Interrupt(); //прерывание выполнения потока
+    }
+
+    public void SoftStop()
+    {
+        isRunning = false;
+        commandQueue.CompleteAdding();
+    }
+
+    public Thread RunThread()
+    {
+        return runThread;
+    }
+
+    public void WaitForCompletion()
+    {
+        runThread.Join();
+    }
+}
+
+#!csharp
+
+public class HardStopCommand : ICommand
+{
+    private readonly ServerThread serverThread;
+
+    public HardStopCommand(ServerThread serverThread)
+    {
+        this.serverThread = serverThread;
+    }
+
+    public void Execute()
+    {
+        //проверяем, что команда выполняется в правильном потоке
+        if (Thread.CurrentThread != serverThread.RunThread())
+        {
+            throw new InvalidOperationException("Текущий поток не совпадает с потоком ServerThread");
+        }
+        serverThread.HardStop();
+    }
+}
+
+#!csharp
+
+public class SoftStopCommand : ICommand
+{
+    private readonly ServerThread serverThread;
+
+    public SoftStopCommand(ServerThread serverThread)
+    {
+        this.serverThread = serverThread;
+    }
+
+    public void Execute()
+    {
+        if (Thread.CurrentThread != serverThread.RunThread())
+        {
+            throw new InvalidOperationException("Текущий поток не совпадает с потоком ServerThread");
+        }
+        serverThread.SoftStop();
+    }
+}
+
+#!csharp
+
+public class UnitTest
+{
+    //проверка HardStopCommand  
+    public static void HardTest()
+    {
+        var serverThread = new ServerThread();
+        var hardStopCommand = new HardStopCommand(serverThread); //добавляем команду в очередь
+
+        serverThread.AddCommand(hardStopCommand);
+        serverThread.WaitForCompletion();
+
+        //проверяем, что поток остановлен
+        if (serverThread.RunThread().IsAlive)
+        {
+            throw new InvalidOperationException("Поток не завершился");
+        }
+        else
+        {
+            Console.WriteLine("HardTest пройден");
+        }
+    }
+
+    //проверка SoftStopCommand  
+    public static void SoftTest()
+    {
+        var serverThread = new ServerThread();
+        var softStopCommand = new SoftStopCommand(serverThread);
+
+        serverThread.AddCommand(softStopCommand);
+        serverThread.WaitForCompletion();
+
+        if (serverThread.RunThread().IsAlive)
+        {
+            throw new InvalidOperationException("Поток не завершился");
+        }
+        else
+        {
+            Console.WriteLine("SoftTest пройден");
+        }
+    }
+}
+
+#!csharp
+
+UnitTest.HardTest();
+UnitTest.SoftTest();
