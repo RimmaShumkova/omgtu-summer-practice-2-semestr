@@ -45,6 +45,7 @@ public class CommandScheduler
     BlockingCollection<TestCommand> commandQueue = new BlockingCollection<TestCommand>();
     Task runTask;
     bool isRunning = true;
+    bool isSoftStopping = false;
 
     public void AddCommand(TestCommand command)
     {
@@ -76,6 +77,28 @@ public class CommandScheduler
         Console.WriteLine("\nПоток остановлен с помощью HardStop");
 
         //проверяем выполнение всех команд
+        if (commandQueue.Count == 0)
+        {
+            Console.WriteLine("Все команды успешно выполнены");
+        }
+        else
+        {
+            Console.WriteLine("Не все команды были выполнены");
+        }
+    }
+
+    public void SoftStop()
+    {
+        isSoftStopping = true;
+        commandQueue.CompleteAdding();
+
+        if (runTask != null && !runTask.IsCompleted)
+        {
+            runTask.Wait();
+        }
+
+        Console.WriteLine("\nПоток остановлен с помощью SoftStop");
+
         if (commandQueue.Count == 0)
         {
             Console.WriteLine("Все команды успешно выполнены");
