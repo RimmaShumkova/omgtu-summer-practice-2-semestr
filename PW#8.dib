@@ -33,15 +33,6 @@
 Чтобы избежать мертвой блокировки потока, необходимо ввести понятие Планировщика, который будет отвечать за выбор следующей длительной задачи для выполнения,
 а чтение из очереди оставить только для новых операций. 
 
-#!csharp
-
-public interface IScheduler
-{
-    bool HasCommand()
-    ICommand Select();
-    void Add(ICommand cmd);
-}
-
 #!markdown
 
 Необходимо реализовать поток, который способен реализоввывать длительные операции.
@@ -55,3 +46,187 @@ public interface IScheduler
 Необходимо учесть этот момент при реализации очереди.
 
 2. Для обепечения справедливости стратегии планировщика в слабом смысле использовать стратегию Round Robbin (циклическую) для определения следующего потока на исполнение.
+
+#!csharp
+
+using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Threading;
+
+public interface ICommand
+{
+    void Execute();
+    bool IsCompleted { get; }
+}
+
+public interface IScheduler
+{
+    bool HasCommand();
+    ICommand Select();
+    void Add(ICommand cmd);
+}
+
+public class Scheduler : IScheduler
+{
+    ConcurrentQueue<ICommand> concQueue = new ConcurrentQueue<ICommand>();
+    List<ICommand> commands = new List<ICommand>();
+    int currentIndex = 0;
+
+    //проверяем наличие команд в очереди или списке
+    public bool HasCommand()
+    {
+        lock (commands)
+        {
+            return commands.Count > 0 || !concQueue.IsEmpty;
+        }
+    }
+
+    public ICommand Select()
+    {
+        lock (commands)
+        {
+            //переносим команды из очереди в список, если список пуст
+            if (commands.Count == 0)
+            {
+                while (concQueue.TryDequeue(out var queuedCmd))
+                {
+                    commands.Add(queuedCmd);
+                }
+            }
+
+            if (commands.Count == 0)
+            {
+                return null;
+            }
+
+            //стратегия Round Robin (циклический выбор команды)
+            var selectedCmd = commands[currentIndex];
+            currentIndex = (currentIndex + 1) % commands.Count;
+
+            return selectedCmd;
+        }
+    }
+
+    public void Add(ICommand cmd)
+    {
+        concQueue.Enqueue(cmd);
+    }
+}
+
+public class RunThread
+{
+    IScheduler sched;
+    Thread thread;
+    bool isRunning;
+
+    public RunThread(IScheduler scheduler)
+    {
+        sched = scheduler;
+        thread = new Thread(Run);
+        isRunning = true;
+    }
+
+    public void Start()
+    {
+        thread.Start();
+    }
+
+    public void Stop()
+    {
+        isRunning = false;
+        thread.Join();
+    }
+    
+    public bool IsAlive => thread.IsAlive;
+
+    //основной метод работы потока
+    private void Run()
+    {
+        while (isRunning)
+        {
+            if (sched.HasCommand())
+            {
+                var cmd = sched.Select();
+                cmd?.Execute();
+
+                //возвращаем команду в очередь, если она еще не завершена
+                if (cmd is ExampleCommand exampleCmd && !exampleCmd.IsCompleted)
+                {
+                    sched.Add(cmd);
+                }
+            }
+            else
+            {
+                Thread.Sleep(10);
+            }
+        }
+    }
+}
+
+public class ExampleCommand : ICommand
+{
+    int remainingExecutions;
+
+    public ExampleCommand(int executions)
+    {
+        remainingExecutions = executions;
+    }
+
+    public void Execute()
+    {
+        if (remainingExecutions > 0)
+        {
+            Console.WriteLine("Выполнение команды");
+            remainingExecutions--;
+        }
+    }
+
+    public bool IsCompleted => remainingExecutions == 0;
+}
+
+#!csharp
+
+//создаем и передаем планировщик в поток
+IScheduler scheduler = new Scheduler();
+RunThread runThread = new RunThread(scheduler);
+
+ICommand command1 = new ExampleCommand(3); //3 выполнения
+ICommand command2 = new ExampleCommand(2); //2 выполнения
+ICommand command3 = new ExampleCommand(1); //1 выполнения
+
+scheduler.Add(command1);
+scheduler.Add(command2);
+scheduler.Add(command3);
+
+Console.WriteLine("Добавлены тестовые команды в планировщик");
+
+runThread.Start();
+Thread.Sleep(100);
+runThread.Stop();
+
+Console.WriteLine("Рабочий поток остановлен");
+
+//проверяем выполнение всех команд
+bool allCommandsCompleted = ((ExampleCommand)command1).IsCompleted &&
+                            ((ExampleCommand)command2).IsCompleted &&
+                            ((ExampleCommand)command3).IsCompleted;
+
+if (allCommandsCompleted)
+{
+    Console.Write("\nВсе команды выполнены");
+}
+else
+{
+    Console.Write("\nНе все команды выполнены");
+}
+
+//проверяем завершение потока
+if (!runThread.IsAlive)
+{
+    Console.Write(", рабочий поток завершился корректно");
+}
+else
+{
+    Console.Write(", рабочий поток не завершился корректно");
+}
