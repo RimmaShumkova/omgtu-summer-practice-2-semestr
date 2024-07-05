@@ -41,6 +41,199 @@
 
 // здесь писать код
 
+#!csharp
+
+using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Threading;
+using System.Threading.Tasks;
+using ScottPlot;
+
+double BlockingCollectionTest()
+{
+    BlockingCollection<int> blockColl = new BlockingCollection<int>();
+    Stopwatch sw = new Stopwatch();
+    int count = 1000000;
+    
+    ManualResetEventSlim resetEvent = new ManualResetEventSlim();
+    ManualResetEventSlim startEvent = new ManualResetEventSlim();
+
+    //создаем задачу для производителя
+    Task producer = Task.Run(() =>
+    {
+        //сигнализируем о начале работы и ждем сигнала для начала работы
+        resetEvent.Set();
+        startEvent.Wait();
+        for (int i = 0; i < count; i++)
+        {
+            blockColl.Add(i);
+        }
+        blockColl.CompleteAdding();
+    });
+
+    //создаем задачу для потребителя
+    Task consumer = Task.Run(() =>
+    {
+        resetEvent.Set();
+        startEvent.Wait();
+        foreach (var item in blockColl.GetConsumingEnumerable())
+        {
+
+        }
+    });
+
+    //ждем пока оба потока подготовятся и разрешаем потокам начать работу
+    resetEvent.Wait();
+    startEvent.Set();
+    sw.Start();
+
+    Task.WaitAll(producer, consumer);
+
+    sw.Stop();
+    return sw.ElapsedMilliseconds;
+}
+
+#!csharp
+
+double ConcurrentQueueTest()
+{
+    ConcurrentQueue<int> concQueue = new ConcurrentQueue<int>();
+    Stopwatch sw = new Stopwatch();
+    int count = 1000000;
+
+    ManualResetEventSlim resetEvent = new ManualResetEventSlim();
+    ManualResetEventSlim startEvent = new ManualResetEventSlim();
+
+    Task producer = Task.Run(() =>
+    {
+        resetEvent.Set();
+        startEvent.Wait();
+        for (int i = 0; i < count; i++)
+        {
+            concQueue.Enqueue(i);
+        }
+    });
+
+    Task consumer = Task.Run(() =>
+    {
+        resetEvent.Set();
+        startEvent.Wait();
+        int result;
+        for (int i = 0; i < count; i++)
+        {
+            while (!concQueue.TryDequeue(out result))
+            {
+
+            }
+        }
+    });
+
+    resetEvent.Wait();
+    startEvent.Set();
+    sw.Start();
+
+    Task.WaitAll(producer, consumer);
+
+    sw.Stop();
+    return sw.ElapsedMilliseconds;
+}
+
+#!csharp
+
+double QueueTest()
+{
+    Queue<int> queue = new Queue<int>();
+    Stopwatch sw = new Stopwatch();
+    int count = 1000000;
+
+    //запись миллиона объектов в очередь
+    sw.Start();
+    for (int i = 0; i < count; i++)
+    {
+        queue.Enqueue(i);
+    }
+
+    //чтение миллиона объектов из очереди
+    for (int i = 0; i < count; i++)
+    {
+        int result = queue.Dequeue();
+    }
+    sw.Stop();
+
+    return sw.ElapsedMilliseconds;
+}
+
+#!csharp
+
+int test = 10;
+var blockCollTime = Enumerable.Range(0, test).Select(_ => BlockingCollectionTest()).ToList();
+var concQueueTime = Enumerable.Range(0, test).Select(_ => ConcurrentQueueTest()).ToList();
+var queueTime = Enumerable.Range(0, test).Select(_ => QueueTest()).ToList();
+
+//находим среднее значение времени
+double blockCollAvg = blockCollTime.Average();
+double concQueueAvg = concQueueTime.Average();
+double queueAvg = queueTime.Average();
+
+string mostEfficientCollection;
+double fastestThreadSafeAvgTime;
+
+if (concQueueAvg < blockCollAvg)
+{
+    mostEfficientCollection = "ConcurrentQueue";
+    fastestThreadSafeAvgTime = concQueueAvg;
+}
+else
+{
+    mostEfficientCollection = "BlockingCollection";
+    fastestThreadSafeAvgTime = blockCollAvg;
+}
+
+double percentDiff = (queueAvg - fastestThreadSafeAvgTime) / queueAvg * 100;
+
+//вывод результатов
+Console.WriteLine($"Среднее время для BlockingCollection: {blockCollAvg} ms");
+Console.WriteLine($"Среднее время для ConcurrentQueue: {concQueueAvg} ms");
+Console.WriteLine($"Среднее время для Queue: {queueAvg} ms");
+Console.WriteLine($"Наиболее эффективная потоко-безопасная коллекция: {mostEfficientCollection}");
+Console.WriteLine($"Скорость {mostEfficientCollection} относительно Queue: {percentDiff:F1}%");
+
+#!csharp
+
+#r "nuget:ScottPlot, 5.0.35"
+using Microsoft.DotNet.Interactive.Formatting;
+Formatter.Register(typeof(ScottPlot.Plot), (p, w) => 
+    w.Write(((ScottPlot.Plot)p).GetImageHtml(300, 400)), HtmlFormatter.MimeType);
+
+#!csharp
+
+//график для BlockingCollection
+ScottPlot.Plot plt = new();
+plt.Add.Scatter(Enumerable.Range(1, 10).ToArray(), blockCollTime.ToArray());
+plt.Save("BlockingCollection.png", 400, 300);
+plt
+
+#!csharp
+
+//график для ConcurrentQueue
+ScottPlot.Plot plt = new();
+plt.Add.Scatter(Enumerable.Range(1, 10).ToArray(), concQueueTime.ToArray());
+plt.Save("ConcurrentQueue.png", 400, 300);
+plt
+
+#!csharp
+
+//график для Queue
+ScottPlot.Plot plt = new();
+plt.Add.Scatter(Enumerable.Range(1, 10).ToArray(), queueTime.ToArray());
+plt.Save("Queue.png", 400, 300);
+plt
+
 #!markdown
 
 ## Вывод
+Как показал тест, наиболее быстрой потоко-безопасной коллекцей является ConcurredQueue.
+Тем не менее, коллекция ConcurredQueue медленнее непотокобезопасной очереди. Ее скорость в среднем на 50% медленнее скорости очереди Queue.
+Иногда скорость коллекции ConcurredQueue может совпадать с Queue.
