@@ -72,10 +72,13 @@ public class Command
 
     public void ExecuteMessages()
     {
-        while (commandQueue.Count > 0)
+        if (commandQueue.Count > 0) //проверка на пустоту очереди
         {
-            var message = commandQueue.Dequeue(); //извлекаем сообщение из очереди
-            Console.WriteLine($"Команда {Id} обрабатывает полученное сообщение: {message.Data}");
+            while (commandQueue.Count > 0)
+            {
+                var message = commandQueue.Dequeue(); //извлекаем сообщение из очереди
+                Console.WriteLine($"Команда {Id} обрабатывает полученное сообщение: {message.Data}");
+            }
         }
     }
 }
@@ -103,15 +106,18 @@ public class Router
     //метод для обработки сообщений из общей очереди
     public void Execute()
     {
-        while (commandConcQueue.TryDequeue(out var message))
+        if (commandConcQueue.Count > 0)
         {
-            if (commands.TryGetValue(message.commandId, out var command))
+            while (commandConcQueue.TryDequeue(out var message))
             {
-                command.EnqueueMessage(message);
-            }
-            else
-            {
-                Console.WriteLine($"Неизвестной команде с ID {message.commandId} сообщение не доставлено");
+                if (commands.TryGetValue(message.commandId, out var command))
+                {
+                    command.EnqueueMessage(message);
+                }
+                else
+                {
+                    Console.WriteLine($"Неизвестной команде с ID {message.commandId} сообщение не доставлено");
+                }
             }
         }
     }
