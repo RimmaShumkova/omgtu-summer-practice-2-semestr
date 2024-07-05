@@ -20,11 +20,15 @@
 
 #!csharp
 
+using System;
+using System.Collections.Concurrent;
+using System.Threading.Tasks;
+using System.Threading;
+
 interface ICommand
 {
     void Execute();
 }
-
 
 public class TestCommand(int id) : ICommand
 {
@@ -35,6 +39,95 @@ public class TestCommand(int id) : ICommand
         Console.WriteLine($"Поток {id} вызов {++counter}");
     }
 }
+
+public class CommandScheduler
+{
+    BlockingCollection<TestCommand> commandQueue = new BlockingCollection<TestCommand>();
+    Task runTask;
+    bool isRunning = true;
+    bool isSoftStopping = false;
+
+    public void AddCommand(TestCommand command)
+    {
+        commandQueue.Add(command); //добавляем команду в очередь
+    }
+
+    public void Start()
+    {
+        runTask = Task.Factory.StartNew(() =>
+        {
+            foreach (var command in commandQueue.GetConsumingEnumerable())
+            {
+                if (!isRunning) break;
+                command.Execute(); //выполнение команды
+            }
+        });
+    }
+
+    public void HardStop()
+    {
+        isRunning = false; //прекращаем выполнение команд
+        commandQueue.CompleteAdding(); //завершаем добавление команд
+
+        if (runTask != null && !runTask.IsCompleted)
+        {
+            runTask.Wait();
+        }
+
+        Console.WriteLine("\nПоток остановлен с помощью HardStop");
+
+        //проверяем выполнение всех команд
+        if (commandQueue.Count == 0)
+        {
+            Console.WriteLine("Все команды успешно выполнены");
+        }
+        else
+        {
+            Console.WriteLine("Не все команды были выполнены");
+        }
+    }
+
+    public void SoftStop()
+    {
+        isSoftStopping = true;
+        commandQueue.CompleteAdding();
+
+        if (runTask != null && !runTask.IsCompleted)
+        {
+            runTask.Wait();
+        }
+
+        Console.WriteLine("\nПоток остановлен с помощью SoftStop");
+
+        if (commandQueue.Count == 0)
+        {
+            Console.WriteLine("Все команды успешно выполнены");
+        }
+        else
+        {
+            Console.WriteLine("Не все команды были выполнены");
+        }
+    }
+}
+
+#!csharp
+
+CommandScheduler scheduler = new CommandScheduler();
+
+//добавляем команды в планировщик
+for (int i = 1; i <= 5; i++)
+{
+    TestCommand testCommand = new TestCommand(i);
+    
+    for (int j = 0; j < 3; j++) //каждую команду выполняем 3 раза
+    {
+        scheduler.AddCommand(testCommand);
+    }
+}
+
+scheduler.Start();
+Thread.Sleep(10);
+scheduler.HardStop();
 
 #!markdown
 
