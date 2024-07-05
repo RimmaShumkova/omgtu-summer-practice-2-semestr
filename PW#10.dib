@@ -55,12 +55,12 @@ public class Message
     }
 }
 
-public class Command
+public class LongCommands
 {
     public int Id { get; }
     Queue<Message> commandQueue = new Queue<Message>();
 
-    public Command(int id)
+    public LongCommands(int id)
     {
         Id = id;
     }
@@ -83,12 +83,26 @@ public class Command
     }
 }
 
+public class LongCommand1 : LongCommands
+{
+    public LongCommand1() : base(1)
+    {
+    }
+}
+
+public class LongCommand2 : LongCommands
+{
+    public LongCommand2() : base(2)
+    {
+    }
+}
+
 public class Router
 {
     ConcurrentQueue<Message> commandConcQueue = new ConcurrentQueue<Message>();
-    Dictionary<int, Command> commands = new Dictionary<int, Command>(); //инициализируем коллекцию комманд
+    Dictionary<int, LongCommands> commands = new Dictionary<int, LongCommands>(); //инициализируем коллекцию комманд
 
-    public void RegisterCommand(Command command)
+    public void RegisterCommand(LongCommands command)
     {
         commands[command.Id] = command; //добавляем команду в коллекцию по ее уникальному ID
     }
@@ -128,8 +142,8 @@ public class Router
 var router = new Router();
 
 //создаем и регистрируем комманды
-var command1 = new Command(1);
-var command2 = new Command(2);
+var command1 = new LongCommand1();
+var command2 = new LongCommand2();
 router.RegisterCommand(command1);
 router.RegisterCommand(command2);
 
