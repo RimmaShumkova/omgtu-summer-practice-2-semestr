@@ -36,3 +36,106 @@
 1. [Паттерн Сообщение](https://www.enterpriseintegrationpatterns.com/patterns/messaging/Message.html)
 2. [Паттерн Роутер - весь раздел про Роутеры](https://www.enterpriseintegrationpatterns.com/patterns/messaging/MessageRoutingIntro.html)
 3. [Обмен сообщеними](https://www.enterpriseintegrationpatterns.com/patterns/messaging/MessageConstructionIntro.html)
+
+#!csharp
+
+using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
+
+public class Message
+{
+    public int commandId { get; } //уникальный идентификатор команды, которой адресовано сообщение
+    public string Data { get; } //содержимое сообщения
+
+    public Message(int commId, string data)
+    {
+        commandId = commId;
+        Data = data;
+    }
+}
+
+public class Command
+{
+    public int Id { get; }
+    Queue<Message> commandQueue = new Queue<Message>();
+
+    public Command(int id)
+    {
+        Id = id;
+    }
+
+    public void EnqueueMessage(Message message)
+    {
+        commandQueue.Enqueue(message); //добавляем сообщение в очередь
+    }
+
+    public void ExecuteMessages()
+    {
+        while (commandQueue.Count > 0)
+        {
+            var message = commandQueue.Dequeue(); //извлекаем сообщение из очереди
+            Console.WriteLine($"Команда {Id} обрабатывает полученное сообщение: {message.Data}");
+        }
+    }
+}
+
+public class Router
+{
+    ConcurrentQueue<Message> commandConcQueue = new ConcurrentQueue<Message>();
+    Dictionary<int, Command> commands = new Dictionary<int, Command>(); //инициализируем коллекцию комманд
+
+    public void RegisterCommand(Command command)
+    {
+        commands[command.Id] = command; //добавляем команду в коллекцию по ее уникальному ID
+    }
+
+    public void UnregisterCommand(int commandId)
+    {
+        commands.Remove(commandId);
+    }
+
+    public void EnqueueMessage(Message message)
+    {
+        commandConcQueue.Enqueue(message);
+    }
+
+    //метод для обработки сообщений из общей очереди
+    public void Execute()
+    {
+        while (commandConcQueue.TryDequeue(out var message))
+        {
+            if (commands.TryGetValue(message.commandId, out var command))
+            {
+                command.EnqueueMessage(message);
+            }
+            else
+            {
+                Console.WriteLine($"Неизвестной команде с ID {message.commandId} сообщение не доставлено");
+            }
+        }
+    }
+}
+
+#!csharp
+
+var router = new Router();
+
+//создаем и регистрируем комманды
+var command1 = new Command(1);
+var command2 = new Command(2);
+router.RegisterCommand(command1);
+router.RegisterCommand(command2);
+
+//отправляем сообщение коммандам
+router.EnqueueMessage(new Message(1, "Hello Command 1"));
+router.EnqueueMessage(new Message(2, "Hello Command 2"));
+router.EnqueueMessage(new Message(3, "Hello Command 3")); //сообщение не придет, т.к команды не существует
+
+router.Execute();
+
+//обрабатываем сообщения и удаляем команды из роутера
+command1.ExecuteMessages();
+command2.ExecuteMessages();
+router.UnregisterCommand(1);
+router.UnregisterCommand(2);
